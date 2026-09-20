@@ -3,7 +3,11 @@ import { getRandomHerbs } from './herbs';
 
 let prescriptionIdCounter = 0;
 
-export function generatePrescription(config: LevelConfig): Prescription {
+export function generatePatientId(): string {
+  return `patient-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function generatePrescription(config: LevelConfig, patientId?: string): Prescription {
   const herbs = getRandomHerbs(config.herbCount, config.hasSimilarHerbs);
   const items: PrescriptionItem[] = herbs.map(herb => {
     const grams = Math.floor(Math.random() * 20) + 5;
@@ -18,8 +22,17 @@ export function generatePrescription(config: LevelConfig): Prescription {
 
   return {
     id: `rx-${++prescriptionIdCounter}-${Date.now()}`,
+    patientId: patientId ?? generatePatientId(),
     items
   };
+}
+
+/** 方子的规范指纹：同一位病人拿着同样几味药、同样克数，就算同一张方子 */
+export function prescriptionKey(rx: Pick<Prescription, 'items'>): string {
+  return rx.items
+    .map(i => `${i.herb}:${i.grams}:${i.decoct}`)
+    .sort()
+    .join('|');
 }
 
 export function generateReviewQuestion(prescription: Prescription): { herb: string; options: number[]; correct: number } | null {

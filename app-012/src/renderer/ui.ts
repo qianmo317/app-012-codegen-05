@@ -1,4 +1,4 @@
-import type { Prescription, WeighResult } from '../types';
+import type { Prescription, WeighResult, SubstitutionPlan } from '../types';
 
 export class UIRenderer {
   prescriptionX: number = 20;
@@ -329,5 +329,148 @@ export class UIRenderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('归零', x + 30, y + 16);
+  }
+
+  /** 缺药替代面板：候选按药性/存量/单价/用量调整摆在一起比，差在哪一条写清楚 */
+  drawSubstitution(
+    ctx: CanvasRenderingContext2D,
+    canvasW: number,
+    canvasH: number,
+    plan: SubstitutionPlan,
+    selected: string | null,
+    prior: string | null,
+    decidedBy: string,
+  ): void {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(0, 0, canvasW, canvasH);
+
+    const w = Math.min(680, canvasW - 40);
+    const cardH = 74;
+    const h = 130 + plan.evaluations.length * (cardH + 8) + 96;
+    const x = (canvasW - w) / 2;
+    const y = Math.max(20, (canvasH - h) / 2);
+
+    ctx.fillStyle = '#fff8f0';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#8b6914';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#8b4513';
+    ctx.font = 'bold 18px "Microsoft YaHei", sans-serif';
+    ctx.fillText(`「${plan.originalHerb}」柜存不足 —— 挑一味药性相近的顶上`, x + 20, y + 28);
+
+    ctx.fillStyle = '#555';
+    ctx.font = '13px "Microsoft YaHei", sans-serif';
+    ctx.fillText(`方子需 ${plan.requiredGrams}g，各候选按 药性 / 存量 / 单价 / 用量增减 摆在一起比：`, x + 20, y + 52);
+
+    this.buttonRects = [];
+    let cy = y + 68;
+
+    for (const e of plan.evaluations) {
+      const c = e.candidate;
+      const isSelected = selected === c.herb;
+      const disabled = !e.stockEnough;
+
+      ctx.fillStyle = disabled ? '#e8e2d8' : isSelected ? '#fde8c8' : '#f5efe4';
+      ctx.fillRect(x + 14, cy, w - 28, cardH);
+      ctx.strokeStyle = disabled ? '#b0a894' : isSelected ? '#d4801a' : '#c8b896';
+      ctx.lineWidth = isSelected ? 3 : 1.5;
+      ctx.strokeRect(x + 14, cy, w - 28, cardH);
+
+      // 药名 + 徽标
+      ctx.fillStyle = disabled ? '#999' : '#333';
+      ctx.font = 'bold 16px "Microsoft YaHei", sans-serif';
+      ctx.textAlign = 'left';
+      const nameX = x + 30;
+      ctx.fillText(`${e.rank}. ${c.herb}`, nameX, cy + 20);
+      let badgeX = nameX + ctx.measureText(`${e.rank}. ${c.herb}`).width + 12;
+      ctx.font = '11px "Microsoft YaHei", sans-serif';
+      if (plan.recommended === c.herb && !disabled) {
+        ctx.fillStyle = '#d4801a';
+        ctx.fillText('[推荐]', badgeX, cy + 20);
+        badgeX += 46;
+      }
+      if (prior === c.herb) {
+        ctx.fillStyle = '#2e7d32';
+        ctx.fillText('[上次定的]', badgeX, cy + 20);
+      }
+
+      // 四条维度 + 综合分
+      ctx.font = '12px "Microsoft YaHei", sans-serif';
+      ctx.fillStyle = disabled ? '#999' : '#444';
+      const doseText = c.doseFactor === 1
+        ? '等量'
+        : c.doseFactor > 1
+          ? `需增量→${e.adjustedGrams}g`
+          : `需减量→${e.adjustedGrams}g`;
+      ctx.fillText(
+        `药性${e.scores.nature}分 ｜ 存量${c.stockGrams}g ｜ ${c.pricePerGram}元/g ｜ ${doseText}`,
+        x + 30, cy + 42,
+      );
+      ctx.textAlign = 'right';
+      ctx.fillStyle = disabled ? '#999' : '#8b4513';
+      ctx.font = 'bold 14px "Microsoft YaHei", sans-serif';
+      ctx.fillText(`综合 ${e.scores.total} 分`, x + w - 30, cy + 20);
+
+      // 差在哪一条
+      ctx.textAlign = 'left';
+      ctx.font = '12px "Microsoft YaHei", sans-serif';
+      if (e.shortcomings.length > 0) {
+        ctx.fillStyle = disabled ? '#a33' : '#c0392b';
+        ctx.fillText(e.shortcomings.join('；'), x + 30, cy + 62);
+      } else {
+        ctx.fillStyle = '#2e7d32';
+        ctx.fillText('各条都合适', x + 30, cy + 62);
+      }
+
+      if (!disabled) {
+        this.buttonRects.push({ x: x + 14, y: cy, w: w - 28, h: cardH, action: `sub-pick-${c.herb}` });
+      }
+      cy += cardH + 8;
+    }
+
+    // 结论：可行给建议，不可行明确告诉抓药的人配不齐
+    cy += 6;
+    ctx.font = 'bold 14px "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = plan.feasible ? '#2e7d32' : '#c0392b';
+    ctx.textAlign = 'left';
+    ctx.fillText(plan.message, x + 20, cy);
+    ctx.font = '12px "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = '#777';
+    ctx.textAlign = 'right';
+    ctx.fillText(`定案人：${decidedBy}`, x + w - 20, cy);
+
+    // 按钮
+    const btnY = cy + 22;
+    const btnH = 36;
+    if (plan.feasible) {
+      const canConfirm = selected !== null;
+      ctx.fillStyle = canConfirm ? '#6b4e23' : '#b0a894';
+      ctx.fillRect(x + 20, btnY, 140, btnH);
+      ctx.strokeStyle = '#d4a574';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 20, btnY, 140, btnH);
+      ctx.fillStyle = '#f5e6d3';
+      ctx.font = '16px "Microsoft YaHei", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('确认替代', x + 90, btnY + btnH / 2);
+      if (canConfirm) {
+        this.buttonRects.push({ x: x + 20, y: btnY, w: 140, h: btnH, action: 'sub-confirm' });
+      }
+    }
+    const ux = plan.feasible ? x + 180 : x + 20;
+    ctx.fillStyle = plan.feasible ? '#8b7355' : '#a33327';
+    ctx.fillRect(ux, btnY, 180, btnH);
+    ctx.strokeStyle = '#d4a574';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ux, btnY, 180, btnH);
+    ctx.fillStyle = '#f5e6d3';
+    ctx.font = '16px "Microsoft YaHei", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(plan.feasible ? '不替代，让病人走' : '告知病人：今天配不齐', ux + 90, btnY + btnH / 2);
+    this.buttonRects.push({ x: ux, y: btnY, w: 180, h: btnH, action: 'sub-unfillable' });
   }
 }

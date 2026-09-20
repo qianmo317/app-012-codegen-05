@@ -58,7 +58,7 @@ describe('generatePrescription', () => {
 
 describe('generateReviewQuestion', () => {
   it('should return null for empty prescription', () => {
-    const result = generateReviewQuestion({ id: '1', items: [] });
+    const result = generateReviewQuestion({ id: '1', patientId: 'p1', items: [] });
     expect(result).toBeNull();
   });
 

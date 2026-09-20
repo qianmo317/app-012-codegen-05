@@ -108,6 +108,10 @@ export class ApothecaryGame {
     } else if (this.game.phase === 'gameover') {
       this.ui.drawGameOver(ctx, w, h, this.game.state.score, this.game.state.level);
     }
+
+    if (this.game.phase === 'substitute' && this.game.currentPlan) {
+      this.ui.drawSubstitution(ctx, w, h, this.game.currentPlan, this.game.selectedSubstitute, this.game.priorChoice, this.game.decidedBy);
+    }
   }
 
   renderMenu(ctx: CanvasRenderingContext2D, w: number, h: number): void {
@@ -197,6 +201,24 @@ export class ApothecaryGame {
         } else if (btn.action === 'endless') {
           this.game.startLevel(1, true);
           this.cabinet.setHerbs(this.game.herbs);
+        }
+      }
+      return;
+    }
+
+    if (this.game.phase === 'substitute') {
+      const btn = this.ui.buttonRects.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+      if (btn) {
+        if (btn.action.startsWith('sub-pick-')) {
+          this.game.selectSubstitute(btn.action.replace('sub-pick-', ''));
+          playPointerSound();
+        } else if (btn.action === 'sub-confirm') {
+          if (this.game.confirmSubstitution()) playSuccessSound();
+          else playErrorSound();
+        } else if (btn.action === 'sub-unfillable') {
+          this.game.declareUnfillable();
+          this.cabinet.setHerbs(this.game.herbs);
+          playErrorSound();
         }
       }
       return;
@@ -294,6 +316,20 @@ export class ApothecaryGame {
       if (key === 'Enter' || key === ' ') {
         this.game.startLevel(1, false);
         this.cabinet.setHerbs(this.game.herbs);
+      }
+      return;
+    }
+
+    if (this.game.phase === 'substitute') {
+      const idx = parseInt(key);
+      if (!isNaN(idx) && this.game.currentPlan && idx >= 1 && idx <= this.game.currentPlan.evaluations.length) {
+        this.game.selectSubstitute(this.game.currentPlan.evaluations[idx - 1].candidate.herb);
+        playPointerSound();
+        return;
+      }
+      if (key === 'Enter' || key === ' ') {
+        if (this.game.confirmSubstitution()) playSuccessSound();
+        else playErrorSound();
       }
       return;
     }
