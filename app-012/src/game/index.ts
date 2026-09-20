@@ -32,6 +32,18 @@ export class ApothecaryGame {
     this.cabinet.layout(this.canvas.width, this.canvas.height);
     this.scale.layout(this.canvas.width, this.canvas.height);
     this.ui.layout(this.canvas.width, this.canvas.height);
+    this.syncCabinet();
+  }
+
+  /** 把状态机里的处方替代关系与存量同步给抽屉渲染 */
+  syncCabinet(): void {
+    if (!this.game.prescription) return;
+    const needed = new Set<string>();
+    this.game.prescription.items.forEach(i => {
+      const eff = this.game.effectiveFor(i.herb);
+      needed.add(eff.herb);
+    });
+    this.cabinet.setHerbs(this.game.herbs, this.game.stock, needed);
   }
 
   start(): void {
@@ -64,7 +76,21 @@ export class ApothecaryGame {
     this.scale.draw(ctx, this.game.currentWeight, this.game.zeroOffset);
 
     if (this.game.prescription) {
-      this.ui.drawPrescription(ctx, this.game.prescription, this.game.weighed, this.game.currentHerb);
+      const recalled = new Map(this.game.substituteInfo);
+      this.game.recalledPreview.forEach((d, k) => recalled.set(k, d));
+      this.ui.drawPrescription(
+        ctx,
+        this.game.prescription,
+        this.game.weighed,
+        this.game.currentHerb,
+        {
+          stock: this.game.stock,
+          substituteCandidate: this.game.substituteCandidate,
+          substituteGrams: this.game.substituteGrams,
+          shortageOriginal: this.game.shortageOriginal,
+          recalled,
+        },
+      );
     }
 
     this.ui.drawStatus(ctx, this.game.state.level, this.game.state.score, this.game.state.combo, this.game.state.queue, this.game.state.satisfaction, this.game.getTimeLeft());
@@ -99,7 +125,13 @@ export class ApothecaryGame {
       }
     }
 
-    if (this.game.phase === 'review') {
+    if (this.game.phase === 'shortage' && this.game.comparison) {
+      if (this.game.comparison.canFulfill) {
+        this.ui.drawShortagePanel(ctx, w, h, this.game.comparison, this.game.selectedCandidate, this.game.recalledDecision);
+      } else {
+        this.ui.drawUnfillable(ctx, w, h, this.game.comparison.message);
+      }
+    } else if (this.game.phase === 'review') {
       if (this.game.reviewQuestion) {
         this.ui.drawReview(ctx, w, h, this.game.reviewQuestion.herb, this.game.reviewQuestion.options, this.game.reviewSelected, this.game.reviewResult);
       }
@@ -193,11 +225,29 @@ export class ApothecaryGame {
       if (btn) {
         if (btn.action === 'start') {
           this.game.startLevel(1, false);
-          this.cabinet.setHerbs(this.game.herbs);
+          this.syncCabinet();
         } else if (btn.action === 'endless') {
           this.game.startLevel(1, true);
-          this.cabinet.setHerbs(this.game.herbs);
+          this.syncCabinet();
         }
+      }
+      return;
+    }
+
+    if (this.game.phase === 'shortage') {
+      const btn = this.ui.buttonRects.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+      if (!btn) return;
+      if (btn.action.startsWith('cand-')) {
+        this.game.selectCandidate(btn.action.slice('cand-'.length));
+        playPointerSound();
+      } else if (btn.action === 'confirm-substitute') {
+        if (this.game.confirmShortage()) {
+          playSuccessSound();
+          this.syncCabinet();
+        }
+      } else if (btn.action === 'ack-unfillable') {
+        this.game.ackUnfillable();
+        this.syncCabinet();
       }
       return;
     }
@@ -218,10 +268,10 @@ export class ApothecaryGame {
       if (btn) {
         if (btn.action === 'next') {
           this.game.nextLevel();
-          this.cabinet.setHerbs(this.game.herbs);
+          this.syncCabinet();
         } else if (btn.action === 'retry') {
           this.game.retryLevel();
-          this.cabinet.setHerbs(this.game.herbs);
+          this.syncCabinet();
         } else if (btn.action === 'menu') {
           this.game.phase = 'menu';
         }
@@ -293,7 +343,32 @@ export class ApothecaryGame {
     if (this.game.phase === 'menu') {
       if (key === 'Enter' || key === ' ') {
         this.game.startLevel(1, false);
-        this.cabinet.setHerbs(this.game.herbs);
+        this.syncCabinet();
+      }
+      return;
+    }
+
+    if (this.game.phase === 'shortage') {
+      if (this.game.comparison && !this.game.comparison.canFulfill) {
+        if (key === 'Enter' || key === ' ') {
+          this.game.ackUnfillable();
+          this.syncCabinet();
+        }
+        return;
+      }
+      const idx = parseInt(key);
+      if (!isNaN(idx) && idx >= 1 && idx <= 9 && this.game.comparison) {
+        const sufficient = this.game.comparison.candidates.filter(c => c.sufficient);
+        const c = sufficient[idx - 1];
+        if (c) {
+          this.game.selectCandidate(c.candidate);
+          playPointerSound();
+        }
+      } else if (key === 'Enter' || key === ' ') {
+        if (this.game.confirmShortage()) {
+          playSuccessSound();
+          this.syncCabinet();
+        }
       }
       return;
     }
@@ -319,6 +394,7 @@ export class ApothecaryGame {
       if (key === ' ' || key === 'Enter') {
         const result = this.game.confirmWeight();
         if (result) {
+          this.syncCabinet();
           if (result.ok) {
             playSuccessSound();
           } else {
@@ -346,7 +422,7 @@ export class ApothecaryGame {
         } else {
           this.game.retryLevel();
         }
-        this.cabinet.setHerbs(this.game.herbs);
+        this.syncCabinet();
       }
       return;
     }

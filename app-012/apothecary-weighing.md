@@ -15,7 +15,8 @@
 1. **看方抓药**：左侧显示处方（3~8 味药 + 克数），右侧百子柜抽屉网格（药名在抽屉上，需辨认/记忆）。
 2. **称量小游戏**：拖药到戥子托盘 → 出现指针/刻度 → 鼠标滚轮或拖砝码微调，指针进入 ±误差窗口才算合格；超差则提示重来。
 3. **打包与复核**：称好后拖到药包区，全部完成进入复核阶段——系统随机抽一味，问「刚才白芍抓了 12g 还是 15g」（考察记忆）。
-4. **时间压力**：门外病人排队，超时病人离开，满意度下降。
+4. **缺货替药**：某味药柜中存量不够时，从药性相近的候选里挑一味顶替。候选按 **药性相似度 / 现有存量 / 单价 / 替代后用量增减** 四维加权打分，落选候选写明差在哪一条；候选存量也不够的一律排后，全都撑不下来就明确提示「这张方子今天配不齐」并送走病人。定药留档（谁定的、为什么），同一位病人再来抓同一张方子默认带出上次定的候选。
+5. **时间压力**：门外病人排队，超时病人离开，满意度下降。
 
 ## 4. 关卡与难度曲线
 - 第 1~3 关：3 味药、误差窗口 ±1.0g、无限时间（教学）。
@@ -29,9 +30,10 @@
 状态：Score / Combo / 病人满意度 / 剩余时间 / 已抓药包
 ```
 ```ts
-type Prescription = { id: string; items: { herb: string; grams: number; decoct: 'normal'|'first'|'last' }[] };
-type WeighResult   = { herb: string; target: number; actual: number; ok: boolean; deltaG: number };
+type Prescription = { id: string; patientId: string; items: { herb: string; grams: number; decoct: 'normal'|'first'|'last' }[] };
+type WeighResult   = { herb: string; dispensedAs: string; target: number; actual: number; ok: boolean; deltaG: number };
 type GameState     = { level: number; score: number; combo: number; queue: number; satisfaction: number; expired: boolean };
+// 缺货替药：SubstitutionComparison(候选打分/排序/推荐/能否配齐)、SubstitutionDecision(留档)
 ```
 
 ## 6. 核心机制实现
@@ -39,6 +41,12 @@ type GameState     = { level: number; score: number; combo: number; queue: numbe
 - **判定窗口**：`|actual - target| ≤ tol` 通过，`≤ 2*tol` 提示警告但计半分，超过则整味重抓（不扣命，扣时间）。
 - **相似药名干扰**：抽屉药名从字形/读音相近的字典中抽（同偏旁、同音字），选错抽屉时给「拿错药」音效与红闪，但不直接结束（真实药房也会被复核拦下）。
 - **分数**：`基础分(100) + 精度奖励(±窗口内线性) + 连击加成 - 超时惩罚`。
+- **缺货替药**（纯逻辑在 `substitution.ts`，单测覆盖）：
+  - 药性相似度 0~100 = 四气温凉刻度差 + 五味/归经/功效标签 Jaccard，四项等权；
+  - 综合分 = 药性 0.45 + 存量充裕度 0.20 + 价格（最便宜者满分，按比例折算）0.20 + 用量增减幅度 0.15；
+  - 用量增减查老药师换算表 `DOSE_RATIOS`（如以青皮替陈皮减 20%、以熟地替生地加 30%），未收录药对默认等量；
+  - 存量不足替代所需克数的候选直接排到末尾并注明缺口，`canFulfill=false` 时给出「这张方子今天配不齐」的明确话术；
+  - 决定留档在 localStorage（`substitutionStore.ts`，键 = 病人编号 + 处方内容签名，与处方流水号无关），同一病人同方复诊默认预选上次候选；上次候选本次存量不够则不沿用。
 
 ## 7. 美术与音效
 - 木色药柜 + 白瓷托盘 + 黄铜戥子，俯视斜 45° 的 2.5D 视图；抽屉打开有阻尼动画。

@@ -3,7 +3,7 @@ import { getRandomHerbs } from './herbs';
 
 let prescriptionIdCounter = 0;
 
-export function generatePrescription(config: LevelConfig): Prescription {
+export function generatePrescription(config: LevelConfig, patientId: string = 'P1001'): Prescription {
   const herbs = getRandomHerbs(config.herbCount, config.hasSimilarHerbs);
   const items: PrescriptionItem[] = herbs.map(herb => {
     const grams = Math.floor(Math.random() * 20) + 5;
@@ -18,14 +18,15 @@ export function generatePrescription(config: LevelConfig): Prescription {
 
   return {
     id: `rx-${++prescriptionIdCounter}-${Date.now()}`,
+    patientId,
     items
   };
 }
 
-export function generateReviewQuestion(prescription: Prescription): { herb: string; options: number[]; correct: number } | null {
+export function generateReviewQuestion(prescription: Prescription, targetOverride?: Map<string, number>): { herb: string; options: number[]; correct: number } | null {
   if (prescription.items.length === 0) return null;
   const item = prescription.items[Math.floor(Math.random() * prescription.items.length)];
-  const correct = item.grams;
+  const correct = targetOverride?.get(item.herb) ?? item.grams;
   const options = new Set<number>([correct]);
   while (options.size < 3) {
     const delta = Math.floor(Math.random() * 10) - 5;

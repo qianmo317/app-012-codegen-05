@@ -4,7 +4,7 @@ export function judgeWeight(actual: number, target: number, tolerance: number): 
   const deltaG = actual - target;
   const absDelta = Math.abs(deltaG);
   const ok = absDelta <= tolerance;
-  return { herb: '', target, actual, ok, deltaG };
+  return { herb: '', dispensedAs: '', target, actual, ok, deltaG };
 }
 
 export function getWeightStatus(result: WeighResult, tolerance: number): 'perfect' | 'good' | 'warning' | 'fail' {

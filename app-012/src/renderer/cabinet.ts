@@ -17,6 +17,9 @@ export class CabinetRenderer {
   private padding = 10;
   private drawerW = 80;
   private drawerH = 50;
+  private stock = new Map<string, number>();
+  /** 方子里实际要抓的药名（含替代药），缺货/非本方的置灰 */
+  needed = new Set<string>();
 
   layout(canvasW: number, _canvasH: number): void {
     this.drawers = [];
@@ -37,13 +40,15 @@ export class CabinetRenderer {
     }
   }
 
-  setHerbs(herbs: HerbMeta[]): void {
+  setHerbs(herbs: HerbMeta[], stock?: Map<string, number>, needed?: Set<string>): void {
     for (let i = 0; i < this.drawers.length && i < herbs.length; i++) {
       this.drawers[i].herb = herbs[i].name;
     }
     for (let i = herbs.length; i < this.drawers.length; i++) {
       this.drawers[i].herb = '';
     }
+    if (stock) this.stock = stock;
+    if (needed) this.needed = needed;
   }
 
   updateHover(mx: number, my: number): void {
@@ -66,6 +71,11 @@ export class CabinetRenderer {
     if (d) d.open = 0;
   }
 
+  /** 抓药扣库存后刷新抽屉上的存量显示 */
+  updateStock(stock: Map<string, number>): void {
+    this.stock = stock;
+  }
+
   draw(ctx: CanvasRenderingContext2D): void {
     for (const d of this.drawers) {
       this.drawDrawer(ctx, d);
@@ -74,7 +84,8 @@ export class CabinetRenderer {
 
   private drawDrawer(ctx: CanvasRenderingContext2D, d: DrawerRect): void {
     const depth = d.open * 8;
-    const bg = d.hovered ? '#8b6914' : '#6b4e23';
+    const isNeeded = d.herb && this.needed.has(d.herb);
+    const bg = d.hovered ? '#8b6914' : isNeeded ? '#7a5a30' : '#5a4028';
 
     ctx.fillStyle = '#4a3728';
     ctx.fillRect(d.x, d.y, d.w, d.h);
@@ -87,11 +98,18 @@ export class CabinetRenderer {
     ctx.strokeRect(d.x + depth, d.y + depth, d.w - depth * 2, d.h - depth * 2);
 
     if (d.herb) {
-      ctx.fillStyle = '#f5e6d3';
+      ctx.fillStyle = isNeeded ? '#ffe9c4' : '#c9b89a';
       ctx.font = '14px "Microsoft YaHei", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(d.herb, d.x + d.w / 2 + depth, d.y + d.h / 2 + depth);
+      ctx.fillText(d.herb, d.x + d.w / 2 + depth, d.y + d.h / 2 - 5 + depth);
+
+      if (this.stock.has(d.herb)) {
+        const grams = this.stock.get(d.herb) ?? 0;
+        ctx.fillStyle = grams <= 0 ? '#ff6b6b' : grams < 15 ? '#e8a33d' : '#a8c98f';
+        ctx.font = '10px sans-serif';
+        ctx.fillText(`${grams}g`, d.x + d.w / 2 + depth, d.y + d.h - 9 + depth);
+      }
     }
 
     if (d.open > 0.5) {
